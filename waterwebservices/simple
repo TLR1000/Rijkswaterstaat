@@ -1,0 +1,82 @@
+//simple call & response
+
+function fetchDataFromAPI() {
+  var url = "https://waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES_DBO/OphalenWaarnemingen";
+
+  var payload = {
+    "AquoPlusWaarnemingMetadata": {
+      "AquoMetadata": {
+        "Compartiment": { "Code": "OW" },
+        "Eenheid": { "Code": "cm" },
+        "MeetApparaat": { "Code": "109" },
+        "Grootheid": { "Code": "Hm0" }
+      }
+    },
+    "Locatie": {
+      "X": 518882.333320247,
+      "Y": 5760829.11729589,
+      "Code": "EURPFM"
+    },
+    "Periode": {
+      "Begindatumtijd": "2012-01-27T09:00:00.000+01:00",
+      "Einddatumtijd": "2012-01-27T09:01:00.000+01:00"
+    }
+  };
+
+  var options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload)
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  var data = JSON.parse(response.getContentText());
+  //Logger.log(response.getResponseCode());
+  //Logger.log(response.getHeaders());
+  //Logger.log(response.getContentText());
+  parseResponseData(data);
+}
+
+function parseResponseData(responseData) {
+  var waarnemingenLijst = responseData.WaarnemingenLijst;
+  
+  for (var i = 0; i < waarnemingenLijst.length; i++) {
+    var locatie = waarnemingenLijst[i].Locatie;
+    var metingenLijst = waarnemingenLijst[i].MetingenLijst;
+    
+    // Process the location data
+    var locatieNaam = locatie.Naam;
+    var locatieCode = locatie.Code;
+    
+    // Process the measurements list
+    for (var j = 0; j < metingenLijst.length; j++) {
+      var meting = metingenLijst[j];
+      var tijdstip = meting.Tijdstip;
+      var meetwaarde = meting.Meetwaarde;
+      var waardeNumeriek = meetwaarde.Waarde_Numeriek;
+      var waardeAlfanumeriek = meetwaarde.Waarde_Alfanumeriek;
+      
+      // Print the measurement data
+      Logger.log("Measurement #" + (j + 1));
+      Logger.log("Location Name: " + locatieNaam);
+      Logger.log("Location Code: " + locatieCode);
+      Logger.log("Timestamp: " + tijdstip);
+      Logger.log("Numeric Value: " + waardeNumeriek);
+      Logger.log("Alphanumeric Value: " + waardeAlfanumeriek);
+      Logger.log("--------------------------------");
+    }
+  }
+}
+
+/*
+expected result:
+
+4:48:01 PM	Info	Measurement #1
+4:48:01 PM	Info	Location Name: Euro platform
+4:48:01 PM	Info	Location Code: EURPFM
+4:48:01 PM	Info	Timestamp: 2012-01-27T09:00:00.000+01:00
+4:48:01 PM	Info	Numeric Value: 152
+4:48:01 PM	Info	Alphanumeric Value: 152
+4:48:01 PM	Info	--------------------------------
+
+*/
