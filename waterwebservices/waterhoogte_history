@@ -1,0 +1,84 @@
+//haal meetwaarden op van de afgelopen 12 uur
+
+function run_fetchWaterhoogte() {
+  var waterhoogtes = fetchWaterhoogte("HELL", 578139.968, 5741741.492);
+  Logger.log("Waterhoogtes from the last 12 hours: " + waterhoogtes);
+}
+
+/**
+ * Fetches and processes water height data for a specified location for the last 12 hours.
+ * 
+ * @param {string} locatieCode - The code of the location to fetch water height data for.
+ * @param {number} xCoord - The X coordinate of the location.
+ * @param {number} yCoord - The Y coordinate of the location.
+ * @returns {Array<number>} A list of water height measurements (WATHTE) for the specified location.
+ */
+function fetchWaterhoogte(locatieCode, xCoord, yCoord) {
+  Logger.log("fetchWaterhoogte() - Fetching water height for location: " + locatieCode);
+
+  var url = "https://waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES_DBO/OphalenWaarnemingen";
+
+  // Calculate the time range for the last 12 hours
+  var now = new Date();
+  var twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+  
+  // Format the time in ISO 8601 format with timezone offset
+  var nowISO = now.toISOString();
+  var twelveHoursAgoISO = twelveHoursAgo.toISOString();
+
+  var payload = {
+    "Locatie": {
+      "Code": locatieCode,
+      "X": xCoord,
+      "Y": yCoord
+    },
+    "AquoPlusWaarnemingMetadata": {
+      "AquoMetadata": {
+        "Compartiment": { "Code": "OW" },
+        "Grootheid": { "Code": "WATHTE" }
+      }
+    },
+    "Periode": {
+      "Begindatumtijd": twelveHoursAgoISO,
+      "Einddatumtijd": nowISO
+    }
+  };
+
+  var options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  
+  if (response.getResponseCode() !== 200) {
+    Logger.log("Error response: " + response.getContentText());
+    return [];
+  }
+
+  var responseData = JSON.parse(response.getContentText());
+  var waarnemingenLijst = responseData.WaarnemingenLijst;
+
+  if (!waarnemingenLijst || waarnemingenLijst.length === 0) {
+    Logger.log("fetchWaterhoogte() - No data returned for location: " + locatieCode);
+    return [];
+  }
+
+  var waterhoogtes = [];
+
+  for (var i = 0; i < waarnemingenLijst.length; i++) {
+    var metingenLijst = waarnemingenLijst[i].MetingenLijst;
+
+    for (var j = 0; j < metingenLijst.length; j++) {
+      var meting = metingenLijst[j];
+      var waardeNumeriek = meting.Meetwaarde.Waarde_Numeriek;
+
+      waterhoogtes.push(waardeNumeriek);
+      Logger.log("fetchWaterhoogte() - Waterhoogte for " + locatieCode + ": " + waardeNumeriek);
+    }
+  }
+
+  return waterhoogtes;
+}
