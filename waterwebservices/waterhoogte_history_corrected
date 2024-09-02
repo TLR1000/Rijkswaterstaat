@@ -1,0 +1,114 @@
+//retrieve the afgelopen 12 uur met foutcorrectie
+
+function run_fetchWaterhoogte() {
+  var waterhoogtes = fetchWaterhoogte("HELL", 578139.968, 5741741.492);
+  Logger.log("Waterhoogtes with extrapolated values: " + waterhoogtes);
+}
+
+/**
+ * Fetches and processes water height data for a specified location for the last 12 hours.
+ * 
+ * @param {string} locatieCode - The code of the location to fetch water height data for.
+ * @param {number} xCoord - The X coordinate of the location.
+ * @param {number} yCoord - The Y coordinate of the location.
+ * @returns {Array<number>} A list of water height measurements (WATHTE) for the specified location with outliers replaced by extrapolated values.
+ */
+function fetchWaterhoogte(locatieCode, xCoord, yCoord) {
+  Logger.log("fetchWaterhoogte() - Fetching water height for location: " + locatieCode);
+
+  var url = "https://waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES_DBO/OphalenWaarnemingen";
+
+  // Calculate the time range for the last 12 hours
+  var now = new Date();
+  var twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+  
+  // Format the time in ISO 8601 format with timezone offset
+  var nowISO = now.toISOString();
+  var twelveHoursAgoISO = twelveHoursAgo.toISOString();
+
+  var payload = {
+    "Locatie": {
+      "Code": locatieCode,
+      "X": xCoord,
+      "Y": yCoord
+    },
+    "AquoPlusWaarnemingMetadata": {
+      "AquoMetadata": {
+        "Compartiment": { "Code": "OW" },
+        "Grootheid": { "Code": "WATHTE" }
+      }
+    },
+    "Periode": {
+      "Begindatumtijd": twelveHoursAgoISO,
+      "Einddatumtijd": nowISO
+    }
+  };
+
+  var options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  
+  if (response.getResponseCode() !== 200) {
+    Logger.log("Error response: " + response.getContentText());
+    return [];
+  }
+
+  var responseData = JSON.parse(response.getContentText());
+  var waarnemingenLijst = responseData.WaarnemingenLijst;
+
+  if (!waarnemingenLijst || waarnemingenLijst.length === 0) {
+    Logger.log("fetchWaterhoogte() - No data returned for location: " + locatieCode);
+    return [];
+  }
+
+  var waterhoogtes = [];
+  var threshold = 100; // Define an arbitrary threshold for valid waterhoogte values
+
+  for (var i = 0; i < waarnemingenLijst.length; i++) {
+    var metingenLijst = waarnemingenLijst[i].MetingenLijst;
+
+    for (var j = 0; j < metingenLijst.length; j++) {
+      var meting = metingenLijst[j];
+      var waardeNumeriek = meting.Meetwaarde.Waarde_Numeriek;
+
+      // Check for outliers and replace with extrapolated value
+      if (waardeNumeriek < threshold) {
+        waterhoogtes.push(waardeNumeriek);
+      } else {
+        var extrapolatedValue = extrapolateValue(waterhoogtes);
+        Logger.log("Outlier detected: " + waardeNumeriek + ". Replacing with extrapolated value: " + extrapolatedValue + 
+                   ". Based on previous values: " + (waterhoogtes.length >= 2 ? waterhoogtes.slice(-2).join(", ") : "N/A"));
+        waterhoogtes.push(extrapolatedValue);
+      }
+    }
+  }
+
+  return waterhoogtes;
+}
+
+/**
+ * Extrapolates a value based on the previous two valid values in the list.
+ * 
+ * @param {Array<number>} waterhoogtes - The list of valid waterhoogtes up to the current point.
+ * @returns {number} The extrapolated value.
+ */
+function extrapolateValue(waterhoogtes) {
+  var length = waterhoogtes.length;
+  
+  // If we have less than two points, return the last valid value (or 0 if none exists)
+  if (length < 2) {
+    return length > 0 ? waterhoogtes[length - 1] : 0;
+  }
+  
+  // Use the difference between the last two valid points to extrapolate
+  var lastValue = waterhoogtes[length - 1];
+  var secondLastValue = waterhoogtes[length - 2];
+  var extrapolatedValue = lastValue + (lastValue - secondLastValue);
+  
+  return extrapolatedValue;
+}
